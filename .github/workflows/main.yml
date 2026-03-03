@@ -1,0 +1,78 @@
+name: Deobfuscate Code
+
+on:
+  workflow_dispatch:
+    inputs:
+      input_file:
+        description: '要反混淆的文件路径 (例如: _worker.js 或 index.js)'
+        required: true
+        default: '_worker.js'
+      output_file:
+        description: '还原后的输出文件名'
+        required: true
+        default: 'restored_code.js'
+      commit_message:
+        description: '提交信息'
+        required: false
+        default: 'chore: auto-deobfuscate code'
+
+jobs:
+  deobfuscate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Deobfuscator Tool
+        run: |
+          # 安装专门针对 javascript-obfuscator 的反混淆工具
+          # 注意：包名是 javascript-deobfuscator，不要混淆为 javascript-obfuscator
+          npm install -g javascript-deobfuscator
+          
+          # 验证安装
+          npx javascript-deobfuscator --version
+
+      - name: Run Deobfuscation
+        run: |
+          echo "Starting deobfuscation for: ${{ github.event.inputs.input_file }}"
+          
+          # 检查输入文件是否存在
+          if [ ! -f "${{ github.event.inputs.input_file }}" ]; then
+            echo "::error::File '${{ github.event.inputs.input_file }}' not found in the repository."
+            exit 1
+          fi
+
+          # 执行反混淆
+          # 语法: javascript-deobfuscator <input> -o <output>
+          npx javascript-deobfuscator "${{ github.event.inputs.input_file }}" -o "${{ github.event.inputs.output_file }}"
+          
+          echo "Deobfuscation complete. Output saved to: ${{ github.event.inputs.output_file }}"
+          
+          # 可选：显示文件大小对比
+          echo "Original size: $(wc -c < "${{ github.event.inputs.input_file }}") bytes"
+          echo "Restored size: $(wc -c < "${{ github.event.inputs.output_file }}") bytes"
+
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "Deobfuscator Bot"
+          
+          # 添加生成的文件
+          git add "${{ github.event.inputs.output_file }}"
+          
+          # 尝试提交，如果没有变化则跳过
+          git commit -m "${{ github.event.inputs.commit_message }} (${{ github.event.inputs.input_file }})" || echo "No changes to commit"
+          
+          # 推送到当前分支
+          git push origin HEAD:${{ github.ref_name }}
